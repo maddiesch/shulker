@@ -8,6 +8,7 @@ if [ ! -d $MINECRAFT_DIR ]; then
 fi
 
 if [ ! -f $MINECRAFT_DIR/server.jar ]; then
+  echo "Download $SERVER_URL"
   wget -O $MINECRAFT_DIR/server.jar $SERVER_URL
 fi
 
