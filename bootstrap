@@ -1,0 +1,26 @@
+#!/bin/sh
+
+echo "Starting Shulker"
+
+if [ ! -d $MINECRAFT_DIR ]; then
+  echo "Creating $MINECRAFT_DIR"
+  mkdir -p $MINECRAFT_DIR
+fi
+
+if [ ! -f $MINECRAFT_DIR/server.jar ]; then
+  wget -O $MINECRAFT_DIR/server.jar $SERVER_URL
+fi
+
+cd $MINECRAFT_DIR
+
+if [ ! -f ./eula.txt ]; then
+  echo "Setup EULA"
+  echo "eula=$ACCEPT_MOJANG_EULA" > ./eula.txt
+fi
+
+if [ ! -f ./server.properties ]; then
+  echo "Copy Default Server Properties"
+  cp $MINECRAFT_DIR/../server.properties ./server.properties
+fi
+
+/bin/sh -c "$JAVA_COMMAND $JAVA_ARGUMENTS -jar $MINECRAFT_DIR/server.jar --nogui --port 25565"
