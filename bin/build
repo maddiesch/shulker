@@ -1,15 +1,18 @@
 #!/usr/bin/env sh
 
 VERSION=1.17.1
-BUILD=1383
+BUILD=1415
 
 echo "Building Shulker"
 
 docker build --build-arg minecraft_version=$VERSION --build-arg purpur_build=$BUILD -t shulker .
-docker tag shulker:latest public.ecr.aws/maddiesch/shulker:latest
-docker tag shulker:latest public.ecr.aws/maddiesch/shulker:$VERSION
-docker tag shulker:latest public.ecr.aws/maddiesch/shulker:$VERSION-$BUILD
 
-docker push public.ecr.aws/maddiesch/shulker:latest
-docker push public.ecr.aws/maddiesch/shulker:$VERSION
-docker push public.ecr.aws/maddiesch/shulker:$VERSION-$BUILD
+if [ "$1" = "push" ]; then
+  docker tag shulker:latest public.ecr.aws/maddiesch/shulker:latest
+  docker tag shulker:latest public.ecr.aws/maddiesch/shulker:$VERSION
+  docker tag shulker:latest public.ecr.aws/maddiesch/shulker:$VERSION-$BUILD
+
+  docker push public.ecr.aws/maddiesch/shulker:latest
+  docker push public.ecr.aws/maddiesch/shulker:$VERSION
+  docker push public.ecr.aws/maddiesch/shulker:$VERSION-$BUILD
+fi
