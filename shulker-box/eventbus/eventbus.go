@@ -112,7 +112,7 @@ func (e *EventBus) delete(i uint64) {
 
 	for key := range e.subs {
 		col := e.subs[key]
-		rep := make([]*subscription, 0, len(col)-1)
+		rep := make([]*subscription, 0, len(col))
 
 		for _, sub := range col {
 			if sub.id != i {

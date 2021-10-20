@@ -1,16 +1,16 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"log"
 	"os"
 	"os/exec"
-	"os/signal"
-	"runtime"
+	"shulker-box/eventbus"
 	"syscall"
 	"time"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 var (
@@ -28,8 +28,6 @@ func init() {
 }
 
 func main() {
-	log.Println("Starting")
-
 	var updateFlagVal bool
 	var configPathVal string
 	flag.BoolVar(&updateFlagVal, "update", false, "specify if the server should be updated")
@@ -41,21 +39,39 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if !checkFileExistsAtPath(cfg.WorkingDir) {
-		if err := os.MkdirAll(cfg.WorkingDir, 0744); err != nil {
-			log.Fatal(err)
-		}
+	if err := performSetupWithForcedUpdate(cfg, updateFlagVal); err != nil {
+		log.Fatal(err)
 	}
 
-	if !checkFileExistsAtPath(cfg.Minecraft.Server.JarPath) || updateFlagVal {
-		if updateFlagVal {
-			log.Println(`Downloading Latest Server JAR`)
+	eventbus.InstallSignalEvent(eventbus.Default, os.Interrupt, syscall.SIGTERM)
+
+	go startMinecraftServer(cfg)
+
+	select {
+	case <-eventbus.Subscribe(eventbus.SignalEvent).Receive():
+		eventbus.Dispatch(`minecraft:command`, `stop`)
+
+		select {
+		case event := <-eventbus.Subscribe(eventNameServerStopped).Receive():
+			if val := event.Value(); val != nil {
+				log.Fatal(val)
+			} else {
+				os.Exit(0)
+			}
+		case <-time.After(serverGracefulShutdownAttemptWait):
+			eventbus.Dispatch(`minecraft:kill_server`, nil)
+
+			select {
+			case <-eventbus.Subscribe(eventNameServerStopped).Receive():
+			case <-time.After(1 * time.Second):
+				os.Exit(16)
+			}
 		}
-		if err := downloadLargeFileFromURL(cfg.Minecraft.Server.DownloadURL, cfg.Minecraft.Server.JarPath); err != nil {
-			log.Fatal(err)
-		}
+	case err := <-eventbus.Subscribe(eventNameServerStopped).Receive():
+		spew.Dump(err)
 	}
-	ctx := context.Background()
+
+	/**
 
 	serverCommandChan := make(chan []byte, 1)
 	serverSignalChan := make(chan serverSig, 1)
@@ -117,6 +133,8 @@ func main() {
 	case err := <-serverChan:
 		handleServerChanResult(err)
 	}
+
+	*/
 }
 
 type serverSig uint8
