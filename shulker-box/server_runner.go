@@ -75,7 +75,7 @@ func startMinecraftServer(cfg shulkerConfig) {
 	for {
 		attempts += 1
 
-		rLog.Printf("Starting Minecraft Server (%d)", attempts)
+		rLog.Printf("Starting Minecraft Server (%d/%d)", attempts, serverRestartMaxAttempts)
 
 		err := execute()
 

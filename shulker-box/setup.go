@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"path/filepath"
 	"shulker-box/cargo"
 )
 
@@ -19,6 +20,21 @@ func performSetupWithForcedUpdate(cfg shulkerConfig, forceUpdate bool) error {
 	if !fileExistsForPath(cfg.Minecraft.Server.JarPath) || forceUpdate {
 		if err := cargo.Download(context.Background(), cfg.Minecraft.Server.DownloadURL, cfg.Minecraft.Server.JarPath); err != nil {
 			return err
+		}
+	}
+
+	eulaFilePath := filepath.Join(cfg.WorkingDir, `eula.txt`)
+	if !fileExistsForPath(eulaFilePath) {
+		log.Print(`Eula file not found`)
+
+		if os.Getenv(`AUTO_ACCEPT_MINECRAFT_EULA`) == `true` {
+			f, err := os.Create(eulaFilePath)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+
+			f.Write([]byte("# EULA Accepted by Shulker explicit AUTO_ACCEPT_MINECRAFT_EULA=true\neula=true\n"))
 		}
 	}
 
