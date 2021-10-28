@@ -27,6 +27,10 @@ jobs:
       - name: Build Releases
         working-directory: ${{ github.workspace }}/shulker-box
         run: make release
+      - uses: actions/upload-artifact@v2
+        with:
+          name: shulker-box-releases
+          path: ${{ github.workspace }}/releases/
   # create_release:
   #   runs-on: ubuntu-latest
   #   steps:
