@@ -30,7 +30,7 @@ jobs:
       - uses: actions/upload-artifact@v2
         with:
           name: shulker-box-releases
-          path: ${{ github.workspace }}/releases/
+          path: ${{ github.workspace }}/release/
   # create_release:
   #   runs-on: ubuntu-latest
   #   steps:
