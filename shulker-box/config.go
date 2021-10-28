@@ -28,6 +28,16 @@ type shulkerConfig struct {
 			JarPath     string `hcl:"jar_file"`
 		} `hcl:"server,block"`
 	} `hcl:"minecraft,block"`
+	ControlServer struct {
+		Port  int                 `hcl:"port"`
+		Host  string              `hcl:"host"`
+		Users []ControlServerUser `hcl:"user,block"`
+	} `hcl:"control_server,block"`
+}
+
+type ControlServerUser struct {
+	Username string `hcl:"name,label"`
+	Password string `hcl:"password"`
 }
 
 func loadAndParseShulkerConfigAtFilePath(path string) (shulkerConfig, error) {
@@ -92,7 +102,7 @@ var purpurLatestFuncHandler = func(args []cty.Value, retType cty.Type) (cty.Valu
 		return cty.NilVal, err
 	}
 	if resp.StatusCode != 200 {
-		return cty.NilVal, fmt.Errorf("http error fetching purpur latest %s", http.StatusText(resp.StatusCode))
+		return cty.NilVal, fmt.Errorf("http error fetching Purpur latest %s", http.StatusText(resp.StatusCode))
 	}
 
 	builds := struct {

@@ -2,32 +2,30 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"log"
 	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
-	"shulker-box/eventbus"
+	"strings"
 	"time"
+
+	"github.com/angryboat/go-dispatch"
 )
 
-var rLog = log.New(os.Stderr, "[shulker-runner] ", log.LstdFlags|log.Lmicroseconds|log.LUTC|log.Lmsgprefix)
-var mLog = log.New(os.Stderr, "[minecraft] ", log.LstdFlags|log.Lmicroseconds|log.LUTC|log.Lmsgprefix)
+var rLog = log.New(os.Stderr, "[shulker-mc] ", logFlags)
+var mLog = log.New(os.Stderr, "[minecraft] ", logFlags)
 
 const (
-	eventNameServerStopped = `server_stopped`
+	dispatchEventName_MinecraftStopped      = `minecraft.server_stopped`
+	dispatchEventName_MinecraftStateChanged = `minecraft.server_state_changed`
+	dispatchEventName_MinecraftCommand      = `minecraft.send_command`
 )
 
-func startMinecraftServer(cfg shulkerConfig) {
-	rLog.Println(`Starting Minecraft Subsystem`)
-
-	defer eventbus.Dispatch(eventNameServerStopped, nil)
-
-	stateListener := eventbus.Listen(`state_changed`, func(unsafeState interface{}) {
-		rLog.Printf(`State Changed %v`, unsafeState)
-	})
-	defer stateListener.Close()
+func runMinecraftServer(cfg shulkerConfig) {
+	defer dispatch.Send(dispatch.NullEvent(dispatchEventName_MinecraftStopped))
 
 	execute := func() error {
 		var cmdArgs []string
@@ -45,27 +43,32 @@ func startMinecraftServer(cfg shulkerConfig) {
 		}
 		defer cmdIn.Close()
 
-		kill := eventbus.Listen(`minecraft:kill_server`, func(interface{}) {
+		killCancel := dispatch.Receive(context.Background(), dispatchEventName_Kill, func(ctx context.Context, e dispatch.Event) {
+			rLog.Print(`Received Kill...`)
 			cmd.Process.Kill()
 		})
-		defer kill.Close()
+		defer killCancel()
 
-		command := eventbus.Listen(`minecraft:command`, func(unsafeCmd interface{}) {
-			var val []byte
-			switch v := unsafeCmd.(type) {
-			case string:
-				val = []byte(v)
-			case []byte:
-				val = v
-			}
+		shutdownCancel := dispatch.Receive(context.Background(), dispatchEventName_Shutdown, func(ctx context.Context, e dispatch.Event) {
+			rLog.Print(`Received Shutdown...`)
 
-			if !bytes.HasSuffix(val, []byte{'\n', '\r'}) {
-				val = append(val, '\n', '\r')
-			}
-
-			cmdIn.Write(val)
+			go sendServerCommandEvent(`stop`)
 		})
-		defer command.Close()
+		defer shutdownCancel()
+
+		commandCancel := dispatch.Receive(context.Background(), dispatchEventName_MinecraftCommand, func(ctx context.Context, e dispatch.Event) {
+			rLog.Print(`Received Command...`)
+
+			switch val := e.Value().(type) {
+			case []byte:
+				cmdIn.Write(val)
+			case string:
+				cmdIn.Write([]byte(val))
+			default:
+				rLog.Printf(`failed to send command with type - %t`, val)
+			}
+		})
+		defer commandCancel()
 
 		return cmd.Run()
 	}
@@ -80,7 +83,6 @@ func startMinecraftServer(cfg shulkerConfig) {
 		err := execute()
 
 		if err != nil {
-			eventbus.Dispatch(`minecraft:server_error`, err)
 			runtime.Goexit()
 		} else if cfg.Minecraft.AutoRestart {
 			if attempts > serverRestartMaxAttempts {
@@ -89,6 +91,14 @@ func startMinecraftServer(cfg shulkerConfig) {
 			<-time.After(serverRestartAttemptWait)
 		}
 	}
+}
+
+func sendServerCommandEvent(input string) {
+	if !strings.HasSuffix(input, "\n\r") {
+		input += "\n\r"
+	}
+
+	dispatch.Send(dispatch.ValueEvent(dispatchEventName_MinecraftCommand, []byte(input)))
 }
 
 var mcLaunchDoneRegexp = regexp.MustCompile(`:\sDone\s\(\d+\.\d+.\)!\sFor\shelp,\stype\s"help"`)
@@ -101,13 +111,13 @@ type stateWriter struct {
 
 func (w *stateWriter) Write(p []byte) (int, error) {
 	if mcStartingRegexp.Match(p) {
-		eventbus.Dispatch(`state_changed`, `starting`)
+		dispatch.Send(dispatch.ValueEvent(dispatchEventName_MinecraftStateChanged, `starting`))
 	}
 	if mcClosedRegexp.Match(p) {
-		eventbus.Dispatch(`state_changed`, `closing`)
+		dispatch.Send(dispatch.ValueEvent(dispatchEventName_MinecraftStateChanged, `closing`))
 	}
 	if mcLaunchDoneRegexp.Match(p) {
-		eventbus.Dispatch(`state_changed`, `started`)
+		dispatch.Send(dispatch.ValueEvent(dispatchEventName_MinecraftStateChanged, `started`))
 	}
 
 	return len(p), nil

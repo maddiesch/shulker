@@ -14,4 +14,13 @@ shulker {
       jar_file = "./server.jar"
     }
   }
+
+  control_server {
+    port = 3000
+    host = "0.0.0.0"
+
+    user "admin" {
+      password = "password"
+    }
+  }
 }

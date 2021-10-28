@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
-	"shulker-box/cargo"
+
+	"github.com/maddiesch/go-cargo"
 )
 
 func performSetupWithForcedUpdate(cfg shulkerConfig, forceUpdate bool) error {
@@ -18,7 +20,7 @@ func performSetupWithForcedUpdate(cfg shulkerConfig, forceUpdate bool) error {
 	}
 
 	if !fileExistsForPath(cfg.Minecraft.Server.JarPath) || forceUpdate {
-		if err := cargo.Download(context.Background(), cfg.Minecraft.Server.DownloadURL, cfg.Minecraft.Server.JarPath); err != nil {
+		if err := downloadFile(context.Background(), cfg.Minecraft.Server.DownloadURL, cfg.Minecraft.Server.JarPath); err != nil {
 			return err
 		}
 	}
@@ -50,4 +52,24 @@ func fileExistsForPath(p string) bool {
 	} else {
 		return true
 	}
+}
+
+func downloadFile(ctx context.Context, fromURL, toPath string) error {
+	location, err := url.Parse(fromURL)
+	if err != nil {
+		return err
+	}
+	jarFile, err := os.Create(toPath)
+	if err != nil {
+		return err
+	}
+
+	defer jarFile.Close()
+
+	_, err = cargo.Download(ctx, cargo.DownloadInput{
+		Source: location,
+		Dest:   jarFile,
+	})
+
+	return err
 }
