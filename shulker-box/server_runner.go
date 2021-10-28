@@ -4,19 +4,20 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/angryboat/go-dispatch"
+	log "github.com/sirupsen/logrus"
 )
 
-var rLog = log.New(os.Stderr, "[shulker-mc] ", logFlags)
-var mLog = log.New(os.Stderr, "[minecraft] ", logFlags)
+var rLog = log.WithField(`subsystem`, `minecraft-runner`)
+var mLog = log.WithField(`subsystem`, `minecraft`)
 
 const (
 	dispatchEventName_MinecraftStopped      = `minecraft.server_stopped`
@@ -26,6 +27,8 @@ const (
 
 func runMinecraftServer(cfg shulkerConfig) {
 	defer dispatch.Send(dispatch.NullEvent(dispatchEventName_MinecraftStopped))
+
+	var receivedShutdown int32
 
 	execute := func() error {
 		var cmdArgs []string
@@ -45,12 +48,16 @@ func runMinecraftServer(cfg shulkerConfig) {
 
 		killCancel := dispatch.Receive(context.Background(), dispatchEventName_Kill, func(ctx context.Context, e dispatch.Event) {
 			rLog.Print(`Received Kill...`)
+			atomic.AddInt32(&receivedShutdown, 1)
+
 			cmd.Process.Kill()
 		})
 		defer killCancel()
 
 		shutdownCancel := dispatch.Receive(context.Background(), dispatchEventName_Shutdown, func(ctx context.Context, e dispatch.Event) {
 			rLog.Print(`Received Shutdown...`)
+
+			atomic.AddInt32(&receivedShutdown, 1)
 
 			go sendServerCommandEvent(`stop`)
 		})
@@ -81,6 +88,11 @@ func runMinecraftServer(cfg shulkerConfig) {
 		rLog.Printf("Starting Minecraft Server (%d/%d)", attempts, serverRestartMaxAttempts)
 
 		err := execute()
+
+		if atomic.SwapInt32(&receivedShutdown, 0) > 0 {
+			rLog.Print(`Mincraft Server Shutdown Complete`)
+			runtime.Goexit()
+		}
 
 		if err != nil {
 			runtime.Goexit()

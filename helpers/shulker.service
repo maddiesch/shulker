@@ -1,0 +1,17 @@
+[Unit]
+Description=Controll Shulker Service
+After=network-online.target
+
+[Service]
+Type=simple
+
+User=maddie
+Group=maddie
+
+WorkingDirectory=/home/maddie/shulker/shulker-box
+ExecStart=/bin/bash -c './shulker-box -config ./config.shulker.hcl'
+RestartSec=60
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

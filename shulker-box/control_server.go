@@ -3,15 +3,14 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"sync"
 
 	"github.com/angryboat/go-dispatch"
 	"github.com/gorilla/mux"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -19,7 +18,7 @@ const (
 )
 
 var (
-	sLog = log.New(os.Stderr, `[shulker-cmd] `, logFlags)
+	sLog = log.WithField(`subsystem`, `control-server`)
 )
 
 func runControlServer(cfg shulkerConfig) {

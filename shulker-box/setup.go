@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
-	"log"
+	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/maddiesch/go-cargo"
+	log "github.com/sirupsen/logrus"
 )
 
 func performSetupWithForcedUpdate(cfg shulkerConfig, forceUpdate bool) error {
@@ -18,6 +21,14 @@ func performSetupWithForcedUpdate(cfg shulkerConfig, forceUpdate bool) error {
 			return err
 		}
 	}
+
+	logFile, err := rotateLogAndOpenForWriting(cfg.LogPath)
+	if err != nil {
+		return err
+	}
+
+	log.SetFormatter(&log.JSONFormatter{})
+	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
 
 	if !fileExistsForPath(cfg.Minecraft.Server.JarPath) || forceUpdate {
 		if err := downloadFile(context.Background(), cfg.Minecraft.Server.DownloadURL, cfg.Minecraft.Server.JarPath); err != nil {
@@ -40,8 +51,12 @@ func performSetupWithForcedUpdate(cfg shulkerConfig, forceUpdate bool) error {
 		}
 	}
 
+	unsafeLogFilePtr = logFile
+
 	return nil
 }
+
+var unsafeLogFilePtr *os.File
 
 func fileExistsForPath(p string) bool {
 	_, err := os.Stat(p)
@@ -66,10 +81,20 @@ func downloadFile(ctx context.Context, fromURL, toPath string) error {
 
 	defer jarFile.Close()
 
+	log.WithField(`subsystem`, `download`).Debugf("Downloading %s", fromURL)
+
 	_, err = cargo.Download(ctx, cargo.DownloadInput{
 		Source: location,
 		Dest:   jarFile,
 	})
 
 	return err
+}
+
+func rotateLogAndOpenForWriting(path string) (*os.File, error) {
+	if fileExistsForPath(path) {
+		oldLogFile := filepath.Join(filepath.Dir(path), fmt.Sprintf("shulker-%d.log", time.Now().Unix()))
+		os.Rename(path, oldLogFile)
+	}
+	return os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0655)
 }

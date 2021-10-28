@@ -1,9 +1,0 @@
-#!/bin/sh
-
-cd $MINECRAFT_DIR
-
-if [ ! -f ./config.shulker.hcl ]; then
-  cp ../config.shulker.hcl $MINECRAFT_DIR/config.shulker.hcl
-fi
-
-/bin/sh -c "shulker-box -config ./config.shulker.hcl"

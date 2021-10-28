@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"flag"
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/angryboat/go-dispatch"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -18,15 +18,6 @@ var (
 	serverGracefulTimeoutKillAttemptWait = 100 * time.Millisecond
 	serverRestartMaxAttempts             = 10
 )
-
-var (
-	logFlags = log.LstdFlags | log.Lmicroseconds | log.LUTC | log.Lmsgprefix
-)
-
-func init() {
-	log.SetFlags(logFlags)
-	log.SetPrefix("[shulker] ")
-}
 
 func main() {
 	var updateFlagVal bool
@@ -61,7 +52,7 @@ func main() {
 		defer cancel()
 		attemptGracefulShutdown(ctx, signalChan)
 	case <-minecraftStopped.Receive():
-		os.Exit(18) // TODO: - Shutdown Other
+		exitWithStatus(18) // TODO: - Shutdown Other
 	}
 }
 
@@ -85,7 +76,7 @@ func attemptGracefulShutdown(ctx context.Context, sigChan <-chan os.Signal) {
 
 		attemptKillShutdown(ctx)
 	case <-shutdown.Receive():
-		os.Exit(0)
+		exitWithStatus(0)
 	case <-sigChan:
 		log.Print(`Gracefull shutdown interupt... killing`)
 		ctx, cancel := context.WithTimeout(ctx, serverGracefulTimeoutKillAttemptWait)
@@ -106,10 +97,10 @@ func attemptKillShutdown(ctx context.Context) {
 	select {
 	case <-ctx.Done():
 		log.Print(`Kill Timeout Exceeded`)
-		os.Exit(8)
+		exitWithStatus(8)
 	case <-shutdown.Receive():
 		log.Print(`Kill Successfull`)
-		os.Exit(12)
+		exitWithStatus(12)
 	}
 }
 
@@ -118,4 +109,11 @@ func awaitShutdownEvents() dispatch.Combine {
 		dispatchEventName_MinecraftStopped,
 		dispatchEventName_ControllerStopped,
 	)
+}
+
+func exitWithStatus(status int) {
+	if unsafeLogFilePtr != nil {
+		unsafeLogFilePtr.Close()
+	}
+	os.Exit(status)
 }
