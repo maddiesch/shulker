@@ -29,7 +29,7 @@ func prepareShulkerForRunning(ctx context.Context, cfg config.Config, forceUpdat
 		}
 	}
 
-	if logger.FileExistsForPath(cfg.ServerJar()) || forceUpdate {
+	if !logger.FileExistsForPath(cfg.ServerJar()) || forceUpdate {
 		logger.L.Infof(`Updating Server Jar`)
 
 		if err := downloadFile(ctx, cfg.Minecraft.Server.DownloadURL, cfg.ServerJar()); err != nil {
