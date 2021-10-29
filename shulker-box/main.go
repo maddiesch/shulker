@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"flag"
+	"io"
 	"os"
 	"os/signal"
+	"shulker-box/config"
+	"shulker-box/logger"
 	"syscall"
 	"time"
 
@@ -19,22 +22,45 @@ var (
 	serverRestartMaxAttempts             = 10
 )
 
+var logFileWriter io.WriteCloser
+
 func main() {
 	var updateFlagVal bool
 	var configPathVal string
+	var logFilePathVal string
+	var logLevelVal string
+
 	flag.BoolVar(&updateFlagVal, "update", false, "specify if the server should be updated")
 	flag.StringVar(&configPathVal, "config", "./config.shulker.hcl", "path to the shulker working dir")
+	flag.StringVar(&logFilePathVal, "log", "./shulker.log", "path to the shulker log")
+	flag.StringVar(&logLevelVal, "loglevel", "info", "logging level")
 	flag.Parse()
+
+	var err error
+
+	logFileWriter, err = logger.CreateLog(logFilePathVal)
+	if err != nil {
+		failWithError(err)
+	}
+
+	logLevel, err := log.ParseLevel(logLevelVal)
+	if err != nil {
+		failWithError(err)
+	}
+
+	logger.L.SetOutput(io.MultiWriter(os.Stdout, logFileWriter))
+	logger.L.SetLevel(logLevel)
+	logger.L.Debugf(`Logger setup with level %s`, logLevel)
 
 	ctx := context.Background()
 
-	cfg, err := loadAndParseShulkerConfigAtFilePath(configPathVal)
+	cfg, err := config.Load(ctx, configPathVal)
 	if err != nil {
-		log.Fatal(err)
+		failWithError(err)
 	}
 
-	if err := performSetupWithForcedUpdate(cfg, updateFlagVal); err != nil {
-		log.Fatal(err)
+	if err := prepareShulkerForRunning(ctx, cfg, updateFlagVal); err != nil {
+		failWithError(err)
 	}
 
 	signalChan := make(chan os.Signal, 1)
@@ -62,7 +88,7 @@ var (
 )
 
 func attemptGracefulShutdown(ctx context.Context, sigChan <-chan os.Signal) {
-	log.Print(`Attempting Graceful Shutdown`)
+	logger.L.Info(`Attempting Graceful Shutdown`)
 
 	dispatch.Send(dispatch.NullEvent(dispatchEventName_Shutdown))
 
@@ -87,7 +113,7 @@ func attemptGracefulShutdown(ctx context.Context, sigChan <-chan os.Signal) {
 }
 
 func attemptKillShutdown(ctx context.Context) {
-	log.Print(`Shutdown Kill`)
+	logger.L.Warn(`Shutdown Kill`)
 
 	dispatch.Send(dispatch.NullEvent(dispatchEventName_Kill))
 
@@ -112,8 +138,14 @@ func awaitShutdownEvents() dispatch.Combine {
 }
 
 func exitWithStatus(status int) {
-	if unsafeLogFilePtr != nil {
-		unsafeLogFilePtr.Close()
+	if logFileWriter != nil {
+		logFileWriter.Close()
 	}
 	os.Exit(status)
+}
+
+func failWithError(err error) {
+	logger.L.Errorf(`Fatal Error: %v`, err)
+
+	exitWithStatus(44)
 }

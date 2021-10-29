@@ -1,3 +1,5 @@
 /shulker-box
 /.vscode
 /shulker/data
+*.log.gz
+/shulker-log

@@ -1,72 +1,53 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"shulker-box/config"
+	"shulker-box/logger"
 	"time"
 
 	"github.com/maddiesch/go-cargo"
-	log "github.com/sirupsen/logrus"
 )
 
-func performSetupWithForcedUpdate(cfg shulkerConfig, forceUpdate bool) error {
-	if !fileExistsForPath(cfg.WorkingDir) {
-		log.Printf("Setup Working Directory: %s", cfg.WorkingDir)
+func prepareShulkerForRunning(ctx context.Context, cfg config.Config, forceUpdate bool) error {
+	if _, err := cfg.JavaCommand(); err != nil {
+		logger.L.Errorf(`Failed to find Java: %v`, err)
+		return err
+	}
+
+	if !logger.FileExistsForPath(cfg.WorkingDir) {
+		logger.L.Infof(`Prepare working directory - %s`, cfg.WorkingDir)
 
 		if err := os.MkdirAll(cfg.WorkingDir, 0744); err != nil {
 			return err
 		}
 	}
 
-	logFile, err := rotateLogAndOpenForWriting(cfg.LogPath)
-	if err != nil {
-		return err
-	}
+	if logger.FileExistsForPath(cfg.ServerJar()) || forceUpdate {
+		logger.L.Infof(`Updating Server Jar`)
 
-	log.SetFormatter(&log.JSONFormatter{})
-	log.SetOutput(io.MultiWriter(os.Stdout, logFile))
-
-	if !fileExistsForPath(cfg.Minecraft.Server.JarPath) || forceUpdate {
-		if err := downloadFile(context.Background(), cfg.Minecraft.Server.DownloadURL, cfg.Minecraft.Server.JarPath); err != nil {
+		if err := downloadFile(ctx, cfg.Minecraft.Server.DownloadURL, cfg.ServerJar()); err != nil {
 			return err
 		}
 	}
 
-	eulaFilePath := filepath.Join(cfg.WorkingDir, `eula.txt`)
-	if !fileExistsForPath(eulaFilePath) {
-		log.Print(`Eula file not found`)
-
-		if os.Getenv(`AUTO_ACCEPT_MINECRAFT_EULA`) == `true` {
-			f, err := os.Create(eulaFilePath)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-
-			f.Write([]byte("# EULA Accepted by Shulker explicit AUTO_ACCEPT_MINECRAFT_EULA=true\neula=true\n"))
+	for _, plugin := range cfg.Minecraft.Plugins {
+		if err := downloadPluginIfNeeded(ctx, cfg.WorkingDir, plugin, forceUpdate); err != nil {
+			return err
 		}
 	}
 
-	unsafeLogFilePtr = logFile
+	if err := createMojangEulaFileIfNeeded(ctx, cfg.WorkingDir, os.Getenv(`AUTO_ACCEPT_MINECRAFT_EULA`) == `true`); err != nil {
+		return err
+	}
 
 	return nil
-}
-
-var unsafeLogFilePtr *os.File
-
-func fileExistsForPath(p string) bool {
-	_, err := os.Stat(p)
-	if os.IsNotExist(err) {
-		return false
-	} else if err != nil {
-		panic(err)
-	} else {
-		return true
-	}
 }
 
 func downloadFile(ctx context.Context, fromURL, toPath string) error {
@@ -81,20 +62,74 @@ func downloadFile(ctx context.Context, fromURL, toPath string) error {
 
 	defer jarFile.Close()
 
-	log.WithField(`subsystem`, `download`).Debugf("Downloading %s", fromURL)
+	logger.L.WithField(`subsystem`, `downloader`).Debugf(`Download file %s`, fromURL)
 
 	_, err = cargo.Download(ctx, cargo.DownloadInput{
-		Source: location,
-		Dest:   jarFile,
+		Source:           location,
+		Dest:             jarFile,
+		ValidateResponse: cargo.ValidateStatusCodeEqual(http.StatusOK),
 	})
+
+	if err != nil {
+		jarFile.Close()
+		os.Remove(jarFile.Name())
+	}
 
 	return err
 }
 
-func rotateLogAndOpenForWriting(path string) (*os.File, error) {
-	if fileExistsForPath(path) {
-		oldLogFile := filepath.Join(filepath.Dir(path), fmt.Sprintf("shulker-%d.log", time.Now().Unix()))
-		os.Rename(path, oldLogFile)
+func createMojangEulaFileIfNeeded(ctx context.Context, workingDir string, explicitAccept bool) error {
+	eulaFilePath := filepath.Join(workingDir, `eula.txt`)
+	if logger.FileExistsForPath(eulaFilePath) {
+		return nil
 	}
-	return os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0655)
+
+	logger.L.Infof(`Missing Mojang EULA (Explicit Auto-Accept: %v)`, explicitAccept)
+
+	var buf bytes.Buffer
+	buf.WriteString(`# Minecraft EULA file created by Shulker`)
+	buf.WriteByte('\n')
+	buf.WriteString(`# Auto-Accept explicitly enabled by end user using environment "AUTO_ACCEPT_MINECRAFT_EULA=true"`)
+	buf.WriteByte('\n')
+	buf.WriteString(fmt.Sprintf(`# Created At - %s`, time.Now().UTC().Format(time.RFC1123)))
+	buf.WriteByte('\n')
+	buf.WriteString(fmt.Sprintf(`eula=%v`, explicitAccept))
+	buf.WriteByte('\n')
+
+	f, err := os.Create(eulaFilePath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	_, err = f.Write(buf.Bytes())
+
+	return err
+}
+
+func downloadPluginIfNeeded(ctx context.Context, workingDir string, p config.MinecraftPlugin, forceUpdate bool) error {
+	pluginDir := filepath.Join(workingDir, `plugins`)
+	if !logger.FileExistsForPath(pluginDir) {
+		logger.L.Debugf(`Creating plugins directory - %s`, pluginDir)
+
+		if err := os.MkdirAll(pluginDir, 0755); err != nil {
+			return err
+		}
+	}
+
+	pluginJarFile := filepath.Join(pluginDir, fmt.Sprintf("%s.jar", p.Name))
+	if !logger.FileExistsForPath(pluginJarFile) || forceUpdate {
+		logger.L.Debugf(`Update plugin %s`, p.Name)
+		if err := downloadFile(ctx, p.Source, pluginJarFile); err != nil {
+			if p.Required {
+				return err
+			}
+
+			logger.L.Errorf(`Download for plugin (%s) failed: %v`, p.Name, err)
+
+			return nil
+		}
+	}
+
+	return nil
 }

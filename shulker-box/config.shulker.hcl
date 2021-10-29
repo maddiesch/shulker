@@ -1,5 +1,4 @@
 shulker {
-  log_file = "./logs/shulker.log"
   working_dir = "${pwd}/shulker/data"
 
   minecraft {
@@ -12,6 +11,10 @@ shulker {
     server {
       download_url = purpur_latest("1.17.1")
       jar_file = "./server.jar"
+    }
+
+    plugin "ChestSort" {
+      source = "https://www.spigotmc.org/resources/chestsort-api.59773/download?version=424811"
     }
   }
 

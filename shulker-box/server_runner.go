@@ -8,16 +8,17 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime"
+	"shulker-box/config"
+	"shulker-box/logger"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/angryboat/go-dispatch"
-	log "github.com/sirupsen/logrus"
 )
 
-var rLog = log.WithField(`subsystem`, `minecraft-runner`)
-var mLog = log.WithField(`subsystem`, `minecraft`)
+var rLog = logger.L.WithField(`subsystem`, `minecraft-runner`)
+var mLog = logger.L.WithField(`subsystem`, `minecraft`)
 
 const (
 	dispatchEventName_MinecraftStopped      = `minecraft.server_stopped`
@@ -25,17 +26,22 @@ const (
 	dispatchEventName_MinecraftCommand      = `minecraft.send_command`
 )
 
-func runMinecraftServer(cfg shulkerConfig) {
+func runMinecraftServer(cfg config.Config) {
 	defer dispatch.Send(dispatch.NullEvent(dispatchEventName_MinecraftStopped))
+
+	javaCommand, err := cfg.JavaCommand()
+	if err != nil {
+		panic(err) // This is validate during setup
+	}
 
 	var receivedShutdown int32
 
 	execute := func() error {
 		var cmdArgs []string
 		cmdArgs = append(cmdArgs, cfg.Minecraft.Java.Flags...)
-		cmdArgs = append(cmdArgs, `-jar`, cfg.Minecraft.Server.JarPath, `--nogui`)
+		cmdArgs = append(cmdArgs, `-jar`, cfg.ServerJar(), `--nogui`)
 
-		cmd := exec.Command(cfg.Minecraft.Java.Command, cmdArgs...)
+		cmd := exec.Command(javaCommand, cmdArgs...)
 		cmd.Dir = cfg.WorkingDir
 		cmd.Stdout = io.MultiWriter(&minecraftWriter{}, &stateWriter{`stdout`})
 		cmd.Stderr = io.MultiWriter(os.Stderr, &stateWriter{`stderr`})
@@ -137,9 +143,13 @@ func (w *stateWriter) Write(p []byte) (int, error) {
 
 type minecraftWriter struct{}
 
+var minecraftLogCleanupRegexp = regexp.MustCompile(`\A\[\d{2}:\d{2}:\d{2}\s+[\w]+\]:\s+`)
+
 func (m *minecraftWriter) Write(p []byte) (int, error) {
 	for _, v := range bytes.Split(bytes.TrimSpace(p), []byte{'\n'}) {
-		mLog.Print(string(v))
+		finalOut := minecraftLogCleanupRegexp.ReplaceAllString(string(v), "")
+
+		mLog.Info(finalOut)
 	}
 
 	return len(p), nil

@@ -3,14 +3,13 @@ package main
 import (
 	"context"
 	"errors"
-	"net"
 	"net/http"
-	"strconv"
+	"shulker-box/config"
+	"shulker-box/logger"
 	"sync"
 
 	"github.com/angryboat/go-dispatch"
 	"github.com/gorilla/mux"
-	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -18,15 +17,15 @@ const (
 )
 
 var (
-	sLog = log.WithField(`subsystem`, `control-server`)
+	sLog = logger.L.WithField(`subsystem`, `control-server`)
 )
 
-func runControlServer(cfg shulkerConfig) {
+func runControlServer(cfg config.Config) {
 	defer dispatch.Send(dispatch.NullEvent(dispatchEventName_ControllerStopped))
 
 	execute := func() error {
 		s := http.Server{
-			Addr:    net.JoinHostPort(cfg.ControlServer.Host, strconv.Itoa(cfg.ControlServer.Port)),
+			Addr:    cfg.ControlServerAddr(),
 			Handler: createControlServerHandler(cfg.ControlServer.Users),
 		}
 
@@ -63,7 +62,7 @@ func runControlServer(cfg shulkerConfig) {
 	sLog.Print(`Command Server Shutdown`)
 }
 
-func createControlServerHandler(users []ControlServerUser) http.Handler {
+func createControlServerHandler(users []config.ControlServerUser) http.Handler {
 	router := mux.NewRouter()
 
 	router.Methods(`GET`).Path(`/system-status`).Handler(controlServerSystemStatusHandler)
@@ -77,7 +76,7 @@ func createControlServerHandler(users []ControlServerUser) http.Handler {
 	})
 }
 
-func authenticate(w http.ResponseWriter, r *http.Request, users []ControlServerUser) bool {
+func authenticate(w http.ResponseWriter, r *http.Request, users []config.ControlServerUser) bool {
 	username, password, ok := r.BasicAuth()
 	if ok {
 		for _, user := range users {
