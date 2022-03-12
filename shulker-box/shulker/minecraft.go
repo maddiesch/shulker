@@ -25,6 +25,7 @@ type NewMinecraftInput struct {
 
 func NewMinecraft(ctx context.Context, in NewMinecraftInput) (*Minecraft, error) {
 	m := &Minecraft{
+		autoRestart: in.Config.Minecraft.AutoRestart,
 		log:         in.Log.Named("Minecraft"),
 		commandChan: make(chan []byte, 8),
 		doneChan:    make(chan struct{}),
@@ -52,6 +53,7 @@ type Minecraft struct {
 	shuttingDown   bool
 	proc           *os.Process
 	hasMissingEula bool
+	autoRestart    bool
 }
 
 func (m *Minecraft) Command(s []byte) {
@@ -88,6 +90,11 @@ func (m *Minecraft) Shutdown(ctx context.Context) error {
 }
 
 func (m *Minecraft) start(ctx context.Context, config Config, app fx.Shutdowner) error {
+	if os.Getenv("DISABLE_MINECRAFT_PROCESS") == "true" {
+		close(m.doneChan)
+		return nil
+	}
+
 	javaCommand, err := config.JavaCommand()
 	if err != nil {
 		return err
@@ -105,6 +112,9 @@ func (m *Minecraft) start(ctx context.Context, config Config, app fx.Shutdowner)
 
 		for m.running() {
 			if err := m.run(ctx, javaCommand, config); err != nil {
+				app.Shutdown()
+				runtime.Goexit()
+			} else if !m.autoRestart {
 				app.Shutdown()
 				runtime.Goexit()
 			}

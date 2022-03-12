@@ -13,3 +13,12 @@ minecraft {
     jar_file = "server.jar"
   }
 }
+
+controller "unix" {
+  listen_on = "/tmp/shulker.sock"
+
+  identity "shulker" {
+    password = env("SHULKER_PASSWORD")
+    access_level = "ADMIN"
+  }
+}

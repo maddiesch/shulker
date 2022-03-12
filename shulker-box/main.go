@@ -42,13 +42,15 @@ func main() {
 type RunInput struct {
 	fx.In
 
-	Log       *zap.Logger
-	Minecraft *shulker.Minecraft
-	// Controller *shulker.Controller
+	Log        *zap.Logger
+	Minecraft  *shulker.Minecraft
+	Controller *shulker.Controller
 }
 
-func Run(in RunInput) {
+func Run(in RunInput) error {
 	in.Log.Info("Running Shulker")
+
+	return in.Controller.Bind(in.Minecraft)
 }
 
 type SetupEnvironmentInput struct {
@@ -77,6 +79,10 @@ func SetupEnvironment(in SetupEnvironmentInput) error {
 			in.Log.Error("Error downloading server jar", zap.Error(err))
 			return err
 		}
+	}
+
+	if utility.FileExists(in.Log, in.Config.Controller.ListenOn) {
+		os.Remove(in.Config.Controller.ListenOn)
 	}
 
 	return nil

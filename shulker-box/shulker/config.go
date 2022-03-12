@@ -35,6 +35,13 @@ type Config struct {
 			JarFile     string `hcl:"jar_file"`
 		} `hcl:"server,block"`
 	} `hcl:"minecraft,block"`
+
+	Controller struct {
+		Protocol string `hcl:"protocol,label"`
+		ListenOn string `hcl:"listen_on"`
+
+		Identities []ControllerIdentity `hcl:"identity,block"`
+	} `hcl:"controller,block"`
 }
 
 func (c Config) JavaCommand() (string, error) {
@@ -71,6 +78,13 @@ func NewConfig(p Params, log *zap.Logger) (Config, error) {
 					{Type: cty.String},
 				},
 			}),
+			`env`: function.New(&function.Spec{
+				Impl: hclFuncGetEvnImpl,
+				Type: function.StaticReturnType(cty.String),
+				Params: []function.Parameter{
+					{Type: cty.String},
+				},
+			}),
 		},
 	}
 
@@ -84,6 +98,10 @@ func NewConfig(p Params, log *zap.Logger) (Config, error) {
 	}
 
 	return config, nil
+}
+
+var hclFuncGetEvnImpl = func(args []cty.Value, retType cty.Type) (cty.Value, error) {
+	return cty.StringVal(os.Getenv(args[0].AsString())), nil
 }
 
 var hclFuncPurpurLatestImpl = func(args []cty.Value, retType cty.Type) (cty.Value, error) {
