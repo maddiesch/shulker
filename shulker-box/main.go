@@ -3,149 +3,81 @@ package main
 import (
 	"context"
 	"flag"
-	"io"
 	"os"
-	"os/signal"
-	"shulker-box/config"
-	"shulker-box/logger"
-	"syscall"
+	"shulker-box/shulker"
+	"shulker-box/shulker/utility"
 	"time"
 
-	"github.com/angryboat/go-dispatch"
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
+	"go.uber.org/zap"
 )
-
-var (
-	serverRestartAttemptWait             = 1 * time.Second
-	serverGracefulShutdownAttemptWait    = 24 * time.Second
-	serverGracefulTimeoutKillAttemptWait = 100 * time.Millisecond
-	serverRestartMaxAttempts             = 10
-)
-
-var logFileWriter io.WriteCloser
 
 func main() {
-	var updateFlagVal bool
-	var configPathVal string
-	var logFilePathVal string
-	var logLevelVal string
+	var params shulker.Params
 
-	flag.BoolVar(&updateFlagVal, "update", false, "specify if the server should be updated")
-	flag.StringVar(&configPathVal, "config", "./config.shulker.hcl", "path to the shulker working dir")
-	flag.StringVar(&logFilePathVal, "log", "./shulker.log", "path to the shulker log")
-	flag.StringVar(&logLevelVal, "loglevel", "info", "logging level")
+	flag.StringVar(&params.ConfigFile, "config", "config.shulker.hcl", "path to the shulker configuration file")
+
 	flag.Parse()
-
-	var err error
-
-	logFileWriter, err = logger.CreateLog(logFilePathVal)
-	if err != nil {
-		failWithError(err)
-	}
-
-	logLevel, err := log.ParseLevel(logLevelVal)
-	if err != nil {
-		failWithError(err)
-	}
-
-	logger.L.SetOutput(io.MultiWriter(os.Stdout, logFileWriter))
-	logger.L.SetLevel(logLevel)
-	logger.L.Debugf(`Logger setup with level %s`, logLevel)
 
 	ctx := context.Background()
 
-	cfg, err := config.Load(ctx, configPathVal)
-	if err != nil {
-		failWithError(err)
-	}
-
-	if err := prepareShulkerForRunning(ctx, cfg, updateFlagVal); err != nil {
-		failWithError(err)
-	}
-
-	signalChan := make(chan os.Signal, 1)
-
-	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
-
-	go runMinecraftServer(cfg)
-	go runControlServer(cfg)
-
-	minecraftStopped := dispatch.Subscribe(dispatchEventName_MinecraftStopped)
-
-	select {
-	case <-signalChan:
-		ctx, cancel := context.WithTimeout(ctx, serverGracefulShutdownAttemptWait)
-		defer cancel()
-		attemptGracefulShutdown(ctx, signalChan)
-	case <-minecraftStopped.Receive():
-		exitWithStatus(18) // TODO: - Shutdown Other
-	}
-}
-
-var (
-	dispatchEventName_Shutdown = `shulker.begin_shutdown`
-	dispatchEventName_Kill     = `shulker.kill`
-)
-
-func attemptGracefulShutdown(ctx context.Context, sigChan <-chan os.Signal) {
-	logger.L.Info(`Attempting Graceful Shutdown`)
-
-	dispatch.Send(dispatch.NullEvent(dispatchEventName_Shutdown))
-
-	shutdown := awaitShutdownEvents()
-	defer shutdown.Cancel()
-
-	select {
-	case <-ctx.Done():
-		ctx, cancel := context.WithTimeout(ctx, serverGracefulTimeoutKillAttemptWait)
-		defer cancel()
-
-		attemptKillShutdown(ctx)
-	case <-shutdown.Receive():
-		exitWithStatus(0)
-	case <-sigChan:
-		log.Print(`Gracefull shutdown interupt... killing`)
-		ctx, cancel := context.WithTimeout(ctx, serverGracefulTimeoutKillAttemptWait)
-		defer cancel()
-
-		attemptKillShutdown(ctx)
-	}
-}
-
-func attemptKillShutdown(ctx context.Context) {
-	logger.L.Warn(`Shutdown Kill`)
-
-	dispatch.Send(dispatch.NullEvent(dispatchEventName_Kill))
-
-	shutdown := awaitShutdownEvents()
-	defer shutdown.Cancel()
-
-	select {
-	case <-ctx.Done():
-		log.Print(`Kill Timeout Exceeded`)
-		exitWithStatus(8)
-	case <-shutdown.Receive():
-		log.Print(`Kill Successfull`)
-		exitWithStatus(12)
-	}
-}
-
-func awaitShutdownEvents() dispatch.Combine {
-	return dispatch.Zip(
-		dispatchEventName_MinecraftStopped,
-		dispatchEventName_ControllerStopped,
+	app := fx.New(
+		shulker.Module,
+		fx.Supply(fx.Annotate(ctx, fx.As(new(context.Context)))),
+		fx.Supply(params),
+		fx.StartTimeout(1*time.Minute),
+		fx.StopTimeout(2*time.Minute),
+		fx.Invoke(SetupEnvironment),
+		fx.Invoke(Run),
+		fx.WithLogger(func(logger *zap.Logger) fxevent.Logger {
+			return &fxevent.ZapLogger{Logger: logger}
+		}),
+		fx.NopLogger,
 	)
+
+	app.Run()
 }
 
-func exitWithStatus(status int) {
-	if logFileWriter != nil {
-		logFileWriter.Close()
+type RunInput struct {
+	fx.In
+
+	Log       *zap.Logger
+	Minecraft *shulker.Minecraft
+	// Controller *shulker.Controller
+}
+
+func Run(in RunInput) {
+	in.Log.Info("Running Shulker")
+}
+
+type SetupEnvironmentInput struct {
+	fx.In
+
+	Log    *zap.Logger
+	Config shulker.Config
+}
+
+func SetupEnvironment(in SetupEnvironmentInput) error {
+	in.Log.Info("Setup Shulker Environment")
+
+	if !utility.FileExists(in.Log, in.Config.WorkingDir) {
+		in.Log.Info("Creating Shulker Working Directory", zap.String("path", in.Config.WorkingDir))
+
+		if err := os.MkdirAll(in.Config.WorkingDir, 0744); err != nil {
+			in.Log.Error("Failed to create working directory", zap.String("path", in.Config.WorkingDir), zap.Error(err))
+			return err
+		}
 	}
-	os.Exit(status)
-}
 
-func failWithError(err error) {
-	logger.L.Errorf(`Fatal Error: %v`, err)
+	if !utility.FileExists(in.Log, in.Config.ServerJar()) {
+		in.Log.Info("Downloading ServerJar", zap.String("path", in.Config.ServerJar()))
 
-	exitWithStatus(44)
+		if err := utility.DownloadFile(in.Log, in.Config.Minecraft.Server.DownloadURL, in.Config.ServerJar()); err != nil {
+			in.Log.Error("Error downloading server jar", zap.Error(err))
+			return err
+		}
+	}
+
+	return nil
 }

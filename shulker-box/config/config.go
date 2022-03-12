@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsimple"
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/function"
+	"go.uber.org/fx"
 )
 
 var Log = logger.L.WithField(`subsystem`, `configuration`)
@@ -47,6 +48,12 @@ type MinecraftPlugin struct {
 	Name     string `hcl:"name,label"`
 	Source   string `hcl:"source"`
 	Required bool   `hcl:"required,optional"`
+}
+
+func Configuration() fx.Option {
+	return fx.Provide(func() (Config, error) {
+		return Config{}, nil
+	})
 }
 
 func Load(ctx context.Context, path string) (Config, error) {

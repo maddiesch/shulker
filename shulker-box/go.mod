@@ -3,13 +3,12 @@ module shulker-box
 go 1.17
 
 require (
-	github.com/angryboat/go-dispatch v0.2.0
-	github.com/gorilla/mux v1.8.0
 	github.com/hashicorp/hcl/v2 v2.10.1
-	github.com/maddiesch/go-cargo v0.0.0-20211021143508-2bff4c2f9a3f
 	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.7.0
 	github.com/zclconf/go-cty v1.8.0
+	go.uber.org/fx v1.17.0
+	go.uber.org/zap v1.21.0
 )
 
 require (
@@ -19,7 +18,10 @@ require (
 	github.com/google/go-cmp v0.3.1 // indirect
 	github.com/mitchellh/go-wordwrap v0.0.0-20150314170334-ad45545899c7 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	golang.org/x/sys v0.0.0-20191026070338-33540a1f6037 // indirect
+	go.uber.org/atomic v1.7.0 // indirect
+	go.uber.org/dig v1.14.0 // indirect
+	go.uber.org/multierr v1.6.0 // indirect
+	golang.org/x/sys v0.0.0-20210903071746-97244b99971b // indirect
 	golang.org/x/text v0.3.5 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 )
