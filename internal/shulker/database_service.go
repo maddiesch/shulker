@@ -15,8 +15,8 @@ import (
 )
 
 type DatabaseService struct {
-	db  *raptor.Conn
-	log *slog.Logger
+	conn *raptor.Conn
+	log  *slog.Logger
 }
 
 func NewDatabaseService(i *do.Injector) (*DatabaseService, error) {
@@ -36,8 +36,8 @@ func NewDatabaseService(i *do.Injector) (*DatabaseService, error) {
 	}
 
 	return &DatabaseService{
-		db:  db,
-		log: log.With(slog.String("subsystem", "database")),
+		conn: db,
+		log:  log.With(slog.String("subsystem", "database")),
 	}, nil
 }
 
@@ -47,7 +47,7 @@ var databaseMigrations embed.FS
 func (s *DatabaseService) ExecuteDatabaseMigration(ctx context.Context) error {
 	s.log.Debug("Performing database migration")
 
-	_, err := s.db.Exec(ctx, `CREATE TABLE IF NOT EXISTS "Migrations" ("Name" TEXT PRIMARY KEY);`)
+	_, err := s.conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS "Migrations" ("Name" TEXT PRIMARY KEY);`)
 	if err != nil {
 		return errors.Wrap(err, "failed to create migrations table")
 	}
@@ -66,7 +66,7 @@ func (s *DatabaseService) ExecuteDatabaseMigration(ctx context.Context) error {
 
 		var exists bool
 
-		if err := s.db.QueryRowStatement(ctx, query).Scan(&exists); err != nil {
+		if err := s.conn.QueryRowStatement(ctx, query).Scan(&exists); err != nil {
 			return errors.Wrap(err, "failed to check if migration exists")
 		}
 
@@ -81,7 +81,7 @@ func (s *DatabaseService) ExecuteDatabaseMigration(ctx context.Context) error {
 			return errors.Wrap(err, "failed to read migration file")
 		}
 
-		err = s.db.Transact(ctx, func(tx raptor.DB) error {
+		err = s.conn.Transact(ctx, func(tx raptor.DB) error {
 			if _, err := tx.Exec(ctx, string(content)); err != nil {
 				return errors.Wrap(err, "failed to execute migration")
 			}
@@ -103,7 +103,7 @@ func (s *DatabaseService) ExecuteDatabaseMigration(ctx context.Context) error {
 func (s *DatabaseService) Get(ctx context.Context, key string) ([]byte, bool) {
 	var value []byte
 
-	err := s.db.QueryRowStatement(ctx, statement.Select("Value").From("KeyValue").Where(conditional.Equal("Key", key))).Scan(&value)
+	err := s.conn.QueryRowStatement(ctx, statement.Select("Value").From("KeyValue").Where(conditional.Equal("Key", key))).Scan(&value)
 	if errors.Is(err, raptor.ErrNoRows) {
 		return nil, false
 	}
@@ -112,7 +112,7 @@ func (s *DatabaseService) Get(ctx context.Context, key string) ([]byte, bool) {
 }
 
 func (s *DatabaseService) Set(ctx context.Context, key string, value []byte) error {
-	return s.db.Transact(ctx, func(tx raptor.DB) error {
+	return s.conn.Transact(ctx, func(tx raptor.DB) error {
 		return s.SetX(ctx, tx, key, value)
 	})
 }
@@ -123,11 +123,11 @@ func (s *DatabaseService) SetX(ctx context.Context, e raptor.Executor, key strin
 }
 
 func (s *DatabaseService) HealthCheck() error {
-	return s.db.Ping(context.Background())
+	return s.conn.Ping(context.Background())
 }
 
 func (s *DatabaseService) Shutdown() error {
 	s.log.Debug("Closing Database connection...")
 
-	return s.db.Close()
+	return s.conn.Close()
 }

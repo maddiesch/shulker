@@ -1,10 +1,13 @@
 package shulker
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 
 	"github.com/angryboat/go-middleware"
+	"github.com/maddiesch/shulker/internal/shulker/model"
+	"github.com/maddiesch/shulker/internal/shulker/render"
 	"github.com/maddiesch/shulker/internal/shulker/router"
 	"github.com/pkg/errors"
 	"github.com/samber/do"
@@ -53,7 +56,28 @@ func (s *ControlServerHandlerService) ServeHTTP(w http.ResponseWriter, r *http.R
 }
 
 func controllerHandlerPostLogin(db *DatabaseService) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return router.HandlerFuncE(func(w http.ResponseWriter, r *http.Request) error {
+		body := struct {
+			Username string
+			Password string
+		}{}
+		defer r.Body.Close()
 
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			return errors.Wrap(err, "failed to decode request body")
+		}
+
+		perm, err := model.CheckUsernamePassword(r.Context(), db.conn, body.Username, body.Password)
+		if err != nil {
+			http.Error(w, "Invalid Username or Password", http.StatusUnauthorized)
+			return nil
+		}
+
+		if perm&model.UserPermissionLogin == 0 {
+			http.Error(w, "Account disabled", http.StatusForbidden)
+			return nil
+		}
+
+		return render.JSON(w, http.StatusOK, map[string]any{})
 	})
 }

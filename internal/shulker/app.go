@@ -26,6 +26,19 @@ type App struct {
 }
 
 func NewApp(in NewAppInput) *App {
+	injector := NewInjector(NewInjectorInput(in))
+
+	return &App{
+		injector: injector,
+	}
+}
+
+type NewInjectorInput struct {
+	*slog.Logger
+	Config
+}
+
+func NewInjector(in NewInjectorInput) *do.Injector {
 	injector := do.New()
 
 	do.ProvideValue(injector, in.Logger)
@@ -35,9 +48,7 @@ func NewApp(in NewAppInput) *App {
 	do.Provide[*ControlServerHandlerService](injector, NewControlServerHandlerService)
 	do.Provide[*DatabaseService](injector, NewDatabaseService)
 
-	return &App{
-		injector: injector,
-	}
+	return injector
 }
 
 func (a *App) Wait() <-chan error {
@@ -164,7 +175,7 @@ func performInitialDatabaseSetup(ctx context.Context, db *DatabaseService, log *
 		Permissions: model.UserPermissionLogin | model.UserPermissionEditor | model.UserPermissionAdmin,
 	}
 
-	return db.db.Transact(ctx, func(tx raptor.DB) error {
+	return db.conn.Transact(ctx, func(tx raptor.DB) error {
 		if err := model.CreateUser(ctx, tx, user); err != nil {
 			return err
 		}

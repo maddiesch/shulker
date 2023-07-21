@@ -3,9 +3,12 @@ package model
 import (
 	"context"
 	"errors"
+	"math/rand"
+	"time"
 
 	"github.com/maddiesch/go-raptor"
 	"github.com/maddiesch/go-raptor/statement"
+	"github.com/maddiesch/go-raptor/statement/conditional"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -44,6 +47,18 @@ func CreateUser(ctx context.Context, x raptor.Executor, p CreateUserParams) erro
 	return err
 }
 
-func CheckUsernamePassword(ctx context.Context, db raptor.Querier, username string) (UserPermission, error) {
-	return 0, errors.New("invalid username or password")
+func CheckUsernamePassword(ctx context.Context, db raptor.Querier, username, password string) (UserPermission, error) {
+	time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
+
+	stmt := statement.Select("Password", "Permissions").From("Users").Where(conditional.Equal("Username", username)).Limit(1)
+	var passwordHash []byte
+	var permissions UserPermission
+	if err := raptor.QueryRowStatement(ctx, db, stmt).Scan(&passwordHash, &permissions); err != nil {
+		return 0, errors.New("invalid username or password")
+	}
+	if err := bcrypt.CompareHashAndPassword(passwordHash, []byte(password)); err != nil {
+		return 0, errors.New("invalid username or password")
+	}
+
+	return permissions, nil
 }
