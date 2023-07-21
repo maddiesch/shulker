@@ -2,11 +2,16 @@ package shulker
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
 	"time"
 
+	_ "embed"
+
+	"github.com/maddiesch/go-raptor"
+	"github.com/maddiesch/shulker/internal/shulker/model"
 	"github.com/samber/do"
 	"golang.org/x/exp/slog"
 )
@@ -54,9 +59,29 @@ func (a *App) Wait() <-chan error {
 	return done
 }
 
-func (a *App) Start(_ context.Context) error {
+const (
+	kDBInitialSetup = ""
+)
+
+//go:embed new_user_warning.txt
+var newUserWarning string
+
+func (a *App) Start(ctx context.Context) error {
 	log := do.MustInvoke[*slog.Logger](a.injector)
 	log.Info("Starting Shulker")
+
+	db := do.MustInvoke[*DatabaseService](a.injector)
+	if err := db.ExecuteDatabaseMigration(ctx); err != nil {
+		return err
+	}
+
+	if _, ok := db.Get(ctx, kDBInitialSetup); !ok {
+		if err := performInitialDatabaseSetup(ctx, db, log); err != nil {
+			return err
+		}
+
+		fmt.Fprintln(os.Stderr, newUserWarning)
+	}
 
 	bus, err := do.Invoke[*EventBusService](a.injector)
 	if err != nil {
@@ -128,4 +153,21 @@ func (a *App) Stop(_ context.Context) error {
 	log.Info("Stopping Shulker")
 
 	return a.injector.Shutdown()
+}
+
+func performInitialDatabaseSetup(ctx context.Context, db *DatabaseService, log *slog.Logger) error {
+	log.Info("Performing initial database setup")
+
+	user := model.CreateUserParams{
+		Username:    "admin",
+		Password:    "password",
+		Permissions: model.UserPermissionLogin | model.UserPermissionEditor | model.UserPermissionAdmin,
+	}
+
+	return db.db.Transact(ctx, func(tx raptor.DB) error {
+		if err := model.CreateUser(ctx, tx, user); err != nil {
+			return err
+		}
+		return db.SetX(ctx, tx, kDBInitialSetup, []byte(time.Now().UTC().Format(time.RFC3339Nano)))
+	})
 }
