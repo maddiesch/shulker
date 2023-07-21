@@ -27,6 +27,8 @@ func NewApp(in NewAppInput) *App {
 	do.ProvideValue(injector, in.Config)
 	do.Provide[*EventBusService](injector, NewEventBusService)
 	do.Provide[*ControlServerService](injector, NewControlServerService)
+	do.Provide[*ControlServerHandlerService](injector, NewControlServerHandlerService)
+	do.Provide[*DatabaseService](injector, NewDatabaseService)
 
 	return &App{
 		injector: injector,
@@ -102,6 +104,13 @@ func (a *App) Start(_ context.Context) error {
 
 	if err := server.Start(); err != nil {
 		return err
+	}
+
+	for name, err := range a.injector.HealthCheck() {
+		if err != nil {
+			log.Error("Service Health Check Failure", slog.String("service-name", name), slog.String("error", err.Error()))
+			return err
+		}
 	}
 
 	return nil

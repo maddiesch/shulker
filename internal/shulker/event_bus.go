@@ -16,4 +16,8 @@ func NewEventBusService(i *do.Injector) (*EventBusService, error) {
 }
 
 func (s *EventBusService) ShutdownWithError(err error) {
+	s.Bus.Publish(Event{
+		Name:    EventNameShutdownError,
+		Payload: err,
+	})
 }

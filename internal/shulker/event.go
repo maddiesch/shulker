@@ -8,5 +8,6 @@ const (
 )
 
 type Event struct {
-	Name EventName
+	Name    EventName
+	Payload any
 }

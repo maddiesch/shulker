@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/samber/do"
@@ -32,17 +33,23 @@ func NewControlServerService(i *do.Injector) (*ControlServerService, error) {
 		return nil, errors.Wrap(err, "failed to get bus instance")
 	}
 
+	handler, err := do.Invoke[*ControlServerHandlerService](i)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get handler instance")
+	}
+
 	return &ControlServerService{
 		logger: logger.With(slog.String("subsystem", "control-server")),
 		bus:    bus,
 		server: &http.Server{
-			Addr: net.JoinHostPort(config.ServerAddress, config.ServerPort),
+			Addr:    net.JoinHostPort(config.ServerAddress, config.ServerPort),
+			Handler: handler,
 		},
 	}, nil
 }
 
 func (s *ControlServerService) Start() error {
-	s.logger.Info("Starting HTTP Control Server")
+	s.logger.Info("Starting HTTP Control Server", slog.String("addr", s.server.Addr))
 
 	listener, err := net.Listen("tcp", s.server.Addr)
 	if err != nil {
@@ -65,5 +72,8 @@ func (s *ControlServerService) Start() error {
 func (s *ControlServerService) Shutdown() error {
 	s.logger.Debug("Shutdown server")
 
-	return s.server.Shutdown(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	return s.server.Shutdown(ctx)
 }

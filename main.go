@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"os"
 
 	"github.com/maddiesch/shulker/internal/shulker"
@@ -9,10 +10,14 @@ import (
 )
 
 func main() {
-	config := shulker.Config{
-		ServerPort:    "3000",
-		ServerAddress: "127.0.0.1",
-	}
+	var config shulker.Config
+
+	flag.StringVar(&config.ServerPort, "server-port", "3000", "control server port")
+	flag.StringVar(&config.ServerAddress, "server-addr", "127.0.0.1", "control server address")
+	flag.StringVar(&config.DatabasePath, "database", "./shulker.db", "path to the shulker database")
+
+	flag.Parse()
+
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	}))
