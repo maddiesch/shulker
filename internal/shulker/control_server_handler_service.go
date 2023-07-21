@@ -69,13 +69,11 @@ func controllerHandlerPostLogin(db *DatabaseService) http.Handler {
 
 		perm, err := model.CheckUsernamePassword(r.Context(), db.conn, body.Username, body.Password)
 		if err != nil {
-			http.Error(w, "Invalid Username or Password", http.StatusUnauthorized)
-			return nil
+			return render.JSONError(w, http.StatusUnauthorized, "Invalid Username or Password")
 		}
 
 		if perm&model.UserPermissionLogin == 0 {
-			http.Error(w, "Account disabled", http.StatusForbidden)
-			return nil
+			return render.JSONError(w, http.StatusForbidden, "Account Disabled")
 		}
 
 		return render.JSON(w, http.StatusOK, map[string]any{})

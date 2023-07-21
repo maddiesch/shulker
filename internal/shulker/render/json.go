@@ -18,3 +18,11 @@ func JSON(w http.ResponseWriter, status int, data any) error {
 
 	return err
 }
+
+func JSONError(w http.ResponseWriter, status int, message string) error {
+	return JSON(w, status, map[string]any{
+		"error": map[string]any{
+			"message": message,
+		},
+	})
+}
